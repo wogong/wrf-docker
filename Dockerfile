@@ -1,10 +1,11 @@
-FROM ubuntu:latest
+FROM ubuntu:20.04
 MAINTAINER Cheng Zhen <hi@wogong.net>
 
 # Set up base OS environment
 RUN apt update -y
-RUN apt install -y gcc g++ gfortran m4 make wget vim-tiny csh
-RUN apt-get -y install mpich # compile is slow
+RUN apt install -y gcc g++ gfortran m4 make wget vim-tiny csh git
+RUN DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get -y install tzdata
+RUN apt -y install mpich
 
 # Set ENV
 RUN mkdir -p /Build_WRF/LIBRARIES
@@ -20,7 +21,7 @@ ENV JASPERLIB $DIR/grib2/lib
 ENV JASPERINC $DIR/grib2/include
 ENV LDFLAGS -L$DIR/grib2/lib
 ENV CPPFLAGS -I$DIR/grib2/include
-ENV J 8
+ENV J 16
 
 # Build zlib
 RUN cd $DIR \
@@ -45,14 +46,14 @@ RUN cd $DIR \
  && wget https://www2.mmm.ucar.edu/wrf/OnLineTutorial/compile_tutorial/tar_files/netcdf-4.1.3.tar.gz \
  && tar xzvf netcdf-4.1.3.tar.gz \
  && cd netcdf-4.1.3 \
- && ./configure --prefix=$DIR/netcdf CPPFLAGS="-I$DIR/hdf5/include -I/$DIR/grib2/include" LDFLAGS="-L$DIR/hdf5/lib -L$DIR/grib2/lib" FCFLAGS="-w -fallow-argument-mismatch -O2" FFLAGS="-w -fallow-argument-mismatch -O2" \
+ && ./configure --prefix=$DIR/netcdf CPPFLAGS="-I$DIR/hdf5/include -I/$DIR/grib2/include" LDFLAGS="-L$DIR/hdf5/lib -L$DIR/grib2/lib" \
  && make -j $J \
  && make install
 ENV PATH $DIR/netcdf/bin:$PATH
 ENV NETCDF $DIR/netcdf
 ENV LD_LIBRARY_PATH $DIR/netcdf/lib:$LD_LIBRARY_PATH
 
-# Build MPICH
+# Build MPICH, so slow that we use the pre built binary in official repo
 #RUN apt install -y python3
 #RUN cd $DIR \
 # && wget https://www.mpich.org/static/downloads/4.0.2/mpich-4.0.2.tar.gz \
@@ -80,6 +81,7 @@ RUN cd $DIR \
  && ./configure --prefix=$DIR/grib2 \
  && make -j $J\
  && make install
+ENV LD_LIBRARY_PATH $DIR/grib2/lib:$LD_LIBRARY_PATH
 
 # Download WRF and WPS
 RUN cd $DIR \
@@ -88,15 +90,17 @@ RUN cd $DIR \
  && tar xzvf wrf.tar.gz \
  && tar xzvf wps.tar.gz
 
+# Build WRF
 RUN cd $DIR/WRFV4.4 \
  &&  (printf "34\n1\n" && cat) | ./configure
 
 RUN cd $DIR/WRFV4.4 \
  && ./compile em_real
-# && ./compile em_real >&& log.compile
 
+# Build WPS
 RUN cd $DIR/WPS-4.4 \
  &&  (printf "1\n" && cat) | ./configure
 
 RUN cd $DIR/WPS-4.4 \
- && ./compile >& log.compile
+ && sed -i "s/CONFIGURE_COMPAT_FLAGS//" configure.wps \
+ && ./compile
